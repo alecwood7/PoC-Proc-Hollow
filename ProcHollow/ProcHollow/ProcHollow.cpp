@@ -37,7 +37,7 @@ int main() {
 
 
 	//Pass Mal1 to get handle
-	HANDLE hMal1 = CreateFileA(
+	HANDLE hMalware = CreateFileA(
 		(LPCSTR)"C:\\Windows\\System32\\notepad.exe",
 		GENERIC_READ,
 		FILE_SHARE_READ,
@@ -48,7 +48,7 @@ int main() {
 	);
 	std::cout << "[+] PID-> 0x" << processInfo->dwProcessId << endl;
 
-	if (hMal1 == INVALID_HANDLE_VALUE) {
+	if (hMalware == INVALID_HANDLE_VALUE) {
 		std::cout << "[!] Failed to open: " << GetLastError() << endl;
 		TerminateProcess(processInfo->hProcess, 0);
 	}
@@ -56,14 +56,14 @@ int main() {
 
 
 	//Retrieve size of Mal1 to use in VirtualAlloc().
-	DWORD mal1FileSize = GetFileSize(hMal1, 0);
-	std::cout << "[+] Mal1 file size: " << mal1FileSize << " bytes." << endl;
+	DWORD malwareFileSize = GetFileSize(hMalware, 0);
+	std::cout << "[+] Mal1 file size: " << malwareFileSize << " bytes." << endl;
 
 
 	//Allocating memory for Mal1
-	PVOID pMal1Image = VirtualAlloc(
+	PVOID pMalwareImage = VirtualAlloc(
 		NULL,
-		mal1FileSize,
+		malwareFileSize,
 		0x3000,
 		0x04
 	);
@@ -73,9 +73,9 @@ int main() {
 
 	//Writes Mal1 into allocated memory
 	if (!ReadFile(
-		hMal1,
-		pMal1Image,
-		mal1FileSize,
+		hMalware,
+		pMalwareImage,
+		malwareFileSize,
 		&numberOfBytesRead,
 		NULL
 	)) {
@@ -84,8 +84,8 @@ int main() {
 		return 1;
 	}
 
-	CloseHandle(hMal1);
-	std::cout << "[+] Wrote Mal1 into memory at: 0x" << pMal1Image << endl;
+	CloseHandle(hMalware);
+	std::cout << "[+] Wrote Mal1 into memory at: 0x" << pMalwareImage << endl;
 
 	return 0;
 }

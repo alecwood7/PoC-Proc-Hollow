@@ -38,7 +38,7 @@ int main() {
 
 	//Pass Mal1 to get handle
 	HANDLE hMal1 = CreateFileA(
-		(LPCSTR)"C:\\Users\\normk_e1w\\source\\repos\\PoC-Proc-Hollow\\Mal1\\x64\\Mal1.exe",
+		(LPCSTR)"C:\\Windows\\System32\\notepad.exe",
 		GENERIC_READ,
 		FILE_SHARE_READ,
 		NULL,

